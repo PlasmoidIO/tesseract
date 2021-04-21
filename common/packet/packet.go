@@ -9,9 +9,14 @@ import (
 const (
 	SEND      = "FILE_SEND_REQUEST"
 	ACCEPT    = "SEND_REQUEST_ACCEPTED"
+	REJECT    = "SEND_REQUEST_REJECTED"
 	REGISTER  = "REGISTER_USERNAME"
 	SEPARATOR = " "
 )
+
+type Packet interface {
+	Serialize() string
+}
 
 type SendPacket struct {
 	PacketType string
@@ -27,14 +32,14 @@ type AcceptPacket struct {
 	PeerAddr   string
 }
 
+type RejectPacket struct {
+	PacketType string
+	Filename   string
+}
+
 type RegisterPacket struct {
 	PacketType string
 	Username   string
-}
-
-type RejectPacket struct {
-	PacketType string
-
 }
 
 func ToRegisterPacket(data string) *RegisterPacket {
@@ -85,10 +90,14 @@ func (p *SendPacket) Serialize() string {
 	return fmt.Sprintf("%s%s%s%s%d%s%s", p.PacketType, SEPARATOR, p.Filename, SEPARATOR, p.Size, SEPARATOR, p.User)
 }
 
+func (p *RejectPacket) Serialize() string {
+	return fmt.Sprintf("%s%s%s", p.PacketType, SEPARATOR, p.Filename)
+}
+
 func NewRegisterPacket(username string) RegisterPacket {
 	return RegisterPacket{
 		PacketType: REGISTER,
-		Username: username,
+		Username:   username,
 	}
 }
 
@@ -107,5 +116,12 @@ func NewAcceptPacket(filename string, size int, peeraddr string) AcceptPacket {
 		Filename:   filename,
 		Size:       size,
 		PeerAddr:   peeraddr,
+	}
+}
+
+func NewRejectPacket(filename string) RejectPacket {
+	return RejectPacket{
+		PacketType: REJECT,
+		Filename:   filename,
 	}
 }

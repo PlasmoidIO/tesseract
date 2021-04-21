@@ -11,24 +11,29 @@ import (
 )
 
 type CentralClient struct {
-	Conn                net.Conn
-	DataChannels        []chan []byte
+	Conn               net.Conn
+	DataChannels       []chan []byte
 	sendRequestHandler func(p *packet.SendPacket) bool
-	PeerAddr string
+	PeerAddr           string
+	Started            bool
 }
 
-func NewClient() CentralClient {
+func NewClient(peerAddr string) CentralClient {
 	conn, err := net.Dial("tcp", "localhost:8080")
 	if err != nil {
 		log.Fatalf("Error: %s", err)
 	}
-	return CentralClient{
+	centralClient := CentralClient{
 		Conn:         conn,
 		DataChannels: []chan []byte{},
+		PeerAddr:     peerAddr,
+		Started:      false,
 	}
+	return centralClient
 }
 
 func (a *CentralClient) Start() {
+	a.Started = true
 	defer func() {
 		if err := a.Conn.Close(); err != nil {
 			log.Fatalf("Error: %s", err)
@@ -41,7 +46,14 @@ func (a *CentralClient) Start() {
 	}
 }
 
-func (a *CentralClient) WriteData(data string) {
+func (a *CentralClient) WritePacket(p packet.Packet) {
+	if !a.Started {
+		log.Fatal("Error: trying to write data before connected.")
+		return
+	}
+
+	data := p.Serialize()
+	fmt.Printf("Writing %s\n", data)
 	if _, err := fmt.Fprintln(a.Conn, data); err != nil {
 		log.Fatalf("Error: %s", err)
 	}
@@ -69,13 +81,14 @@ func (a *CentralClient) handleData(buf []byte) {
 	if packetType == "FILE_SEND_REQUEST" {
 		p := packet.ToSendPacket(data)
 		res := a.sendRequestHandler(p)
+		fmt.Println(res)
 		if res {
 			accepted := packet.NewAcceptPacket(p.Filename, p.Size, a.PeerAddr)
-			a.WriteData(accepted.Serialize())
+			a.WritePacket(&accepted)
 		} else {
-			//rejected :=
+			rejected := packet.NewRejectPacket(p.Filename)
+			a.WritePacket(&rejected)
 		}
-		return
 	}
 
 	for _, c := range a.DataChannels {
@@ -86,7 +99,7 @@ func (a *CentralClient) handleData(buf []byte) {
 func (a *CentralClient) RegisterUsername(username string) error {
 	registerPacket := packet.NewRegisterPacket(username)
 	c := a.CreateDataChannel()
-	a.WriteData(registerPacket.Serialize())
+	a.WritePacket(&registerPacket)
 	for {
 		res := <-c
 		data := strings.Split(string(res), " ")

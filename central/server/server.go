@@ -62,7 +62,7 @@ func (s *Server) handleSendPacket(conn net.Conn, p *packet.SendPacket) {
 	write(conn, fmt.Sprintf("%s USER_NOT_FOUND", p.PacketType))
 }
 
-func (s *Server) handleAcceptPacket(conn net.Conn, data string) {
+func (s *Server) handleResponsePacket(conn net.Conn, data string) {
 	for ch, c := range s.channels {
 		if c == conn {
 			ch <- data
@@ -85,8 +85,8 @@ func (s *Server) handleData(conn net.Conn, buf []byte) {
 			break
 		}
 		s.handleSendPacket(conn, p)
-	case packet.ACCEPT:
-		s.handleAcceptPacket(conn, data)
+	case packet.ACCEPT, packet.REJECT:
+		s.handleResponsePacket(conn, data)
 	}
 }
 
@@ -106,6 +106,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 		for k, v := range s.authHandler.Connected {
 			if conn == v {
 				delete(s.authHandler.Connected, k)
+				break
 			}
 		}
 		if err := conn.Close(); err != nil {
