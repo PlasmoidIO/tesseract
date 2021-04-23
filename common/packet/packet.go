@@ -15,14 +15,15 @@ const (
 )
 
 type Packet interface {
-	Serialize() string
+	String() string
 }
 
 type SendPacket struct {
 	PacketType string
 	Filename   string
 	Size       int
-	User       string
+	Username   string
+	SenderAddr string
 }
 
 type AcceptPacket struct {
@@ -66,7 +67,8 @@ func ToSendPacket(data string) *SendPacket {
 		PacketType: arr[0],
 		Filename:   arr[1],
 		Size:       n,
-		User:       arr[3],
+		Username:   arr[3],
+		SenderAddr: arr[4],
 	}
 }
 
@@ -78,19 +80,19 @@ func GetPacketType(packet string) string {
 	return ""
 }
 
-func (p *RegisterPacket) Serialize() string {
+func (p *RegisterPacket) String() string {
 	return fmt.Sprintf("%s%s%s", p.PacketType, SEPARATOR, p.Username)
 }
 
-func (p *AcceptPacket) Serialize() string {
+func (p *AcceptPacket) String() string {
 	return fmt.Sprintf("%s%s%s%s%d%s%s", p.PacketType, SEPARATOR, p.Filename, SEPARATOR, p.Size, SEPARATOR, p.PeerAddr)
 }
 
-func (p *SendPacket) Serialize() string {
-	return fmt.Sprintf("%s%s%s%s%d%s%s", p.PacketType, SEPARATOR, p.Filename, SEPARATOR, p.Size, SEPARATOR, p.User)
+func (p *SendPacket) String() string {
+	return fmt.Sprintf("%s%s%s%s%d%s%s%s%s", p.PacketType, SEPARATOR, p.Filename, SEPARATOR, p.Size, SEPARATOR, p.Username, SEPARATOR, p.SenderAddr)
 }
 
-func (p *RejectPacket) Serialize() string {
+func (p *RejectPacket) String() string {
 	return fmt.Sprintf("%s%s%s", p.PacketType, SEPARATOR, p.Filename)
 }
 
@@ -101,12 +103,13 @@ func NewRegisterPacket(username string) RegisterPacket {
 	}
 }
 
-func NewSendPacket(filename string, size int, user string) SendPacket {
+func NewSendPacket(filename string, size int, target string, senderAddr string) SendPacket {
 	return SendPacket{
 		PacketType: SEND,
 		Filename:   filename,
 		Size:       size,
-		User:       user,
+		Username:   target,
+		SenderAddr: senderAddr,
 	}
 }
 

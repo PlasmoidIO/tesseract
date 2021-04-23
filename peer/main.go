@@ -5,47 +5,30 @@ import (
 	"fmt"
 	"os"
 	"share/common/packet"
-	"share/peer/client"
+	"share/peer/application"
+	"strconv"
 	"strings"
 )
 
-var scanner *bufio.Scanner
-
-
-func handleSendRequest(p *packet.SendPacket) bool {
-	fmt.Printf("Send request received from %s of a file named: %s, with a size of %d bytes.\nAccept? [y,n] ", p.User, p.Filename, p.Size)
-	if !scanner.Scan() {
-		return false
-	}
-	for scanner.Scan() {
-		input := scanner.Text()
-		switch strings.ToLower(input) {
-		case "y":
-			return true
-		case "n":
-			return false
-		}
-	}
-
-	return false
-}
-
-func registerUsername(c *client.CentralClient) {
-	fmt.Print("Username: ")
-	scanner = bufio.NewScanner(os.Stdin)
-	if !scanner.Scan() {
-		return
-	}
-	if err := c.RegisterUsername(scanner.Text()); err == nil {
-		fmt.Println("Registered successfully")
-	} else {
-		fmt.Printf("Error registering: %s\n", err)
-	}
-}
-
 func main() {
-	c := client.NewClient("/ip4/127.0.0.1/54061/filesharing/hfodFHDSOhsodfnONFoSHFP34u0")
-	go registerUsername(&c)
-	c.HandleSendRequest(handleSendRequest)
-	c.Start()
+	app := application.NewApplication()
+	go app.Start()
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		arr := strings.Split(scanner.Text(), " ")
+		if len(arr) < 4 {
+			continue
+		}
+		filename := arr[0]
+		filesize, err := strconv.Atoi(arr[1])
+		if err != nil {
+			fmt.Printf("Error: %s\n", err)
+			continue
+		}
+		username := arr[2]
+		addr := arr[3]
+
+		p := packet.NewSendPacket(filename, filesize, username, addr)
+		app.Client.WritePacket(&p)
+	}
 }

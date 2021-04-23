@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"share/common/packet"
+	"share/peer/application"
 	"strings"
 )
 
@@ -14,11 +15,11 @@ type CentralClient struct {
 	Conn               net.Conn
 	DataChannels       []chan []byte
 	sendRequestHandler func(p *packet.SendPacket) bool
-	PeerAddr           string
 	Started            bool
+	App                *application.Application
 }
 
-func NewClient(peerAddr string) CentralClient {
+func NewClient(app *application.Application) CentralClient {
 	conn, err := net.Dial("tcp", "localhost:8080")
 	if err != nil {
 		log.Fatalf("Error: %s", err)
@@ -26,80 +27,80 @@ func NewClient(peerAddr string) CentralClient {
 	centralClient := CentralClient{
 		Conn:         conn,
 		DataChannels: []chan []byte{},
-		PeerAddr:     peerAddr,
 		Started:      false,
+		App:          app,
 	}
 	return centralClient
 }
 
-func (a *CentralClient) Start() {
-	a.Started = true
+func (cl *CentralClient) Start() {
+	cl.Started = true
 	defer func() {
-		if err := a.Conn.Close(); err != nil {
+		if err := cl.Conn.Close(); err != nil {
 			log.Fatalf("Error: %s", err)
 		}
 	}()
 
-	scanner := bufio.NewScanner(a.Conn)
+	scanner := bufio.NewScanner(cl.Conn)
 	for scanner.Scan() {
-		go a.handleData(scanner.Bytes())
+		go cl.handleData(scanner.Bytes())
 	}
 }
 
-func (a *CentralClient) WritePacket(p packet.Packet) {
-	if !a.Started {
+func (cl *CentralClient) WritePacket(p packet.Packet) {
+	if !cl.Started {
 		log.Fatal("Error: trying to write data before connected.")
 		return
 	}
 
-	data := p.Serialize()
+	data := p.String()
 	fmt.Printf("Writing %s\n", data)
-	if _, err := fmt.Fprintln(a.Conn, data); err != nil {
+	if _, err := fmt.Fprintln(cl.Conn, data); err != nil {
 		log.Fatalf("Error: %s", err)
 	}
 }
 
-func (a *CentralClient) CreateDataChannel() chan []byte {
+func (cl *CentralClient) CreateDataChannel() chan []byte {
 	ch := make(chan []byte)
-	a.DataChannels = append(a.DataChannels, ch)
+	cl.DataChannels = append(cl.DataChannels, ch)
 	return ch
 }
 
-func (a *CentralClient) RemoveDataChannel(c chan []byte) {
-	for i, ch := range a.DataChannels {
+func (cl *CentralClient) RemoveDataChannel(c chan []byte) {
+	for i, ch := range cl.DataChannels {
 		if ch == c {
-			last := len(a.DataChannels) - 1
-			a.DataChannels[i], a.DataChannels[last] = a.DataChannels[last], a.DataChannels[i]
-			a.DataChannels = a.DataChannels[:last]
+			last := len(cl.DataChannels) - 1
+			cl.DataChannels[i], cl.DataChannels[last] = cl.DataChannels[last], cl.DataChannels[i]
+			cl.DataChannels = cl.DataChannels[:last]
 		}
 	}
 }
 
-func (a *CentralClient) handleData(buf []byte) {
+func (cl *CentralClient) handleData(buf []byte) {
 	data := string(buf)
+	fmt.Println(data)
 	packetType := packet.GetPacketType(data)
 	if packetType == "FILE_SEND_REQUEST" {
 		p := packet.ToSendPacket(data)
-		res := a.sendRequestHandler(p)
-		fmt.Println(res)
+		res := cl.sendRequestHandler(p)
 		if res {
-			accepted := packet.NewAcceptPacket(p.Filename, p.Size, a.PeerAddr)
-			a.WritePacket(&accepted)
+			accepted := packet.NewAcceptPacket(p.Filename, p.Size, cl.App.GetPeerAddress())
+			cl.WritePacket(&accepted)
 		} else {
 			rejected := packet.NewRejectPacket(p.Filename)
-			a.WritePacket(&rejected)
+			cl.WritePacket(&rejected)
 		}
 	}
 
-	for _, c := range a.DataChannels {
+	for _, c := range cl.DataChannels {
 		c <- buf
 	}
 }
 
-func (a *CentralClient) RegisterUsername(username string) error {
+func (cl *CentralClient) RegisterUsername(username string) error {
 	registerPacket := packet.NewRegisterPacket(username)
-	c := a.CreateDataChannel()
-	a.WritePacket(&registerPacket)
+	c := cl.CreateDataChannel()
+	cl.WritePacket(&registerPacket)
 	for {
 		res := <-c
 		data := strings.Split(string(res), " ")
@@ -107,7 +108,7 @@ func (a *CentralClient) RegisterUsername(username string) error {
 			continue
 		}
 		if data[0] == registerPacket.PacketType {
-			a.RemoveDataChannel(c)
+			cl.RemoveDataChannel(c)
 			switch data[1] {
 			case "USER_REGISTER_SUCCESS":
 				return nil
@@ -124,6 +125,6 @@ func (a *CentralClient) RegisterUsername(username string) error {
 }
 
 // ch: send request accepted or denied
-func (a *CentralClient) HandleSendRequest(handler func(p *packet.SendPacket) bool) {
-	a.sendRequestHandler = handler
+func (cl *CentralClient) HandleSendRequest(handler func(p *packet.SendPacket) bool) {
+	cl.sendRequestHandler = handler
 }

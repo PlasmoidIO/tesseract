@@ -42,12 +42,12 @@ func (s *Server) handleRegisterPacket(conn net.Conn, p *packet.RegisterPacket) {
 }
 
 func (s *Server) handleSendPacket(conn net.Conn, p *packet.SendPacket) {
-	user, has := s.authHandler.Connected[p.User]
+	user, has := s.authHandler.Connected[p.Username]
 	if has {
 		sender, has := s.getUserFromConn(conn)
 		if has {
-			p.User = sender
-			write(user, p.Serialize())
+			p.Username = sender
+			write(user, p.String())
 
 			ch := make(chan string)
 			s.channels[ch] = user
