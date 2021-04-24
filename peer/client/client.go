@@ -109,9 +109,11 @@ func (cl *CentralClient) sendFileRequest(req *packet.SendPacket) (*packet.Accept
 		res := string(<-ch)
 		packetType := packet.GetPacketType(res)
 		if packetType == packet.ACCEPT {
-			cl.RemoveDataChannel(ch)
 			acceptPacket := packet.ToAcceptPacket(res)
-			return acceptPacket, true
+			if acceptPacket.Filename == req.Filename && acceptPacket.Size == req.Size {
+				cl.RemoveDataChannel(ch)
+				return acceptPacket, true
+			}
 		}
 		if packetType == packet.REJECT {
 			rejectPacket := packet.ToRejectPacket(res)
