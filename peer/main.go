@@ -3,32 +3,39 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"share/common/packet"
-	"share/peer/application"
-	"strconv"
+	"share/peer/client"
 	"strings"
 )
 
+func catch(err error) {
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 func main() {
-	app := application.NewApplication()
-	go app.Start()
+	cl := client.NewClient()
+	go cl.Start()
 	scanner := bufio.NewScanner(os.Stdin)
+	cl.HandleSendRequest(func(p *packet.SendPacket) bool {
+		fmt.Println("received this bitch")
+		return true
+	})
+	fmt.Print("Username: ")
+	if scanner.Scan() {
+		catch(cl.RegisterUsername(scanner.Text()))
+	}
 	for scanner.Scan() {
 		arr := strings.Split(scanner.Text(), " ")
-		if len(arr) < 4 {
+		if len(arr) < 2 {
 			continue
 		}
 		filename := arr[0]
-		filesize, err := strconv.Atoi(arr[1])
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-			continue
-		}
-		username := arr[2]
-		addr := arr[3]
-
-		p := packet.NewSendPacket(filename, filesize, username, addr)
-		app.Client.WritePacket(&p)
+		filesize := 815
+		target := arr[1]
+		fmt.Println("post result", cl.SendFile(filename, filesize, target))
 	}
 }

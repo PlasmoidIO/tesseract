@@ -16,10 +16,10 @@ type CentralClient struct {
 	DataChannels       []chan []byte
 	sendRequestHandler func(p *packet.SendPacket) bool
 	Started            bool
-	App                *application.Application
+	RegisteredUsername string
 }
 
-func NewClient(app *application.Application) CentralClient {
+func NewClient() CentralClient {
 	conn, err := net.Dial("tcp", "localhost:8080")
 	if err != nil {
 		log.Fatalf("Error: %s", err)
@@ -28,7 +28,6 @@ func NewClient(app *application.Application) CentralClient {
 		Conn:         conn,
 		DataChannels: []chan []byte{},
 		Started:      false,
-		App:          app,
 	}
 	return centralClient
 }
@@ -78,23 +77,58 @@ func (cl *CentralClient) RemoveDataChannel(c chan []byte) {
 
 func (cl *CentralClient) handleData(buf []byte) {
 	data := string(buf)
-	fmt.Println(data)
 	packetType := packet.GetPacketType(data)
 	if packetType == "FILE_SEND_REQUEST" {
 		p := packet.ToSendPacket(data)
-		res := cl.sendRequestHandler(p)
-		if res {
-			accepted := packet.NewAcceptPacket(p.Filename, p.Size, cl.App.GetPeerAddress())
-			cl.WritePacket(&accepted)
-		} else {
-			rejected := packet.NewRejectPacket(p.Filename)
-			cl.WritePacket(&rejected)
+		handler := cl.sendRequestHandler
+		if handler != nil {
+			res := handler(p)
+			if res {
+				app := application.NewShareHandler()
+				accepted := packet.NewAcceptPacket(p.Filename, p.Size, app.PeerHandler.GetPeerAddress())
+				cl.WritePacket(&accepted)
+				app.Receive(p)
+			} else {
+				rejected := packet.NewRejectPacket(p.Filename)
+				cl.WritePacket(&rejected)
+			}
 		}
 	}
 
 	for _, c := range cl.DataChannels {
 		c <- buf
 	}
+}
+
+func (cl *CentralClient) sendFileRequest(req *packet.SendPacket) (*packet.AcceptPacket, bool) {
+	cl.WritePacket(req)
+	ch := cl.CreateDataChannel()
+	for {
+		res := string(<-ch)
+		packetType := packet.GetPacketType(res)
+		if packetType == packet.ACCEPT {
+			cl.RemoveDataChannel(ch)
+			acceptPacket := packet.ToAcceptPacket(res)
+			return acceptPacket, true
+		}
+		if packetType == packet.REJECT {
+			rejectPacket := packet.ToRejectPacket(res)
+			if rejectPacket.Filename == req.Filename {
+				cl.RemoveDataChannel(ch)
+				return nil, false
+			}
+		}
+	}
+}
+
+func (cl *CentralClient) SendFile(filename string, filesize int, target string) bool {
+	app := application.NewShareHandler()
+	req := packet.NewSendPacket(filename, filesize, target, app.PeerHandler.GetPeerAddress())
+	accept, ok := cl.sendFileRequest(&req)
+	if ok {
+		app.Send(accept)
+	}
+	return ok
 }
 
 func (cl *CentralClient) RegisterUsername(username string) error {
@@ -111,6 +145,7 @@ func (cl *CentralClient) RegisterUsername(username string) error {
 			cl.RemoveDataChannel(c)
 			switch data[1] {
 			case "USER_REGISTER_SUCCESS":
+				cl.RegisteredUsername = username
 				return nil
 			case "USER_REGISTER_FAILURE":
 				if len(data) > 2 {

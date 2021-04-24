@@ -1,73 +1,51 @@
 package application
 
 import (
-	"context"
-	"fmt"
-	"github.com/libp2p/go-libp2p"
-	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"io/ioutil"
 	"log"
 	"share/common/packet"
-	"share/peer/client"
 )
 
-const PROTOCOL = "share"
-
-type Application struct {
-	host     host.Host
-	peerAddr string
-
-	Client client.CentralClient
+type ShareHandler struct {
+	PeerHandler PeerHandler
 }
 
-func (a *Application) GetPeerAddress() string {
-	return a.peerAddr
+func NewShareHandler() ShareHandler {
+	peerHandler := NewPeerHandler()
+	return ShareHandler{peerHandler}
 }
 
-func NewApplication() Application {
-	ctx := context.Background()
-	node, err := libp2p.New(ctx)
-	catch(err)
-	app := Application{host: node}
-	cl := client.NewClient(&app)
-	app.Client = cl
-	return app
-}
-
-func catch(err error) {
-	if err != nil {
-		log.Fatalf("Error: %s", err)
-	}
-}
-
-func (a *Application) handleSendRequest(req *packet.SendPacket) bool {
-	fmt.Printf("Send request: %s\n", req)
-	return true
-}
-
-func (a *Application) handleConnection(stream network.Stream) {
-
-}
-
-func (a *Application) Start() {
+func (s *ShareHandler) Send(req *packet.AcceptPacket) {
+	stream := s.PeerHandler.OpenConnection(req.PeerAddr)
 	defer func() {
-		err := a.host.Close()
-		catch(err)
+		catch(stream.Close())
 	}()
-
-	a.Client.HandleSendRequest(a.handleSendRequest)
-	a.host.SetStreamHandler(PROTOCOL, func(s network.Stream) {
-		go a.handleConnection(s)
-	})
-
-	peerInfo := peer.AddrInfo{
-		ID:    a.host.ID(),
-		Addrs: a.host.Addrs(),
+	buf, err := ioutil.ReadFile(req.Filename)
+	if err != nil {
+		log.Fatal(err)
 	}
-	addrs, err := peer.AddrInfoToP2pAddrs(&peerInfo)
-	catch(err)
-	a.peerAddr = addrs[0].String()
+	if _, err = stream.Write(buf); err != nil {
+		log.Fatalf("Error writing to stream: %s", err)
+	}
+}
 
-	a.Client.Start()
+// TODO: stream authentication
+func (s *ShareHandler) Receive(req *packet.SendPacket) {
+	ch := make(chan bool)
+	callback := func(stream network.Stream) {
+		defer func() {
+			catch(stream.Close())
+		}()
+		buf, err := ioutil.ReadAll(stream)
+		if err != nil {
+			log.Fatalf("Error reading from stream: %s", err)
+		}
+		if err := ioutil.WriteFile(req.Filename, buf, 0); err != nil {
+			log.Fatalf("Error writing to file: %s", err)
+		}
+		ch <- true
+	}
+	s.PeerHandler.HandleIncoming(callback)
+	<-ch
 }

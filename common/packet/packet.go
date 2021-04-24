@@ -56,7 +56,7 @@ func ToRegisterPacket(data string) *RegisterPacket {
 
 func ToSendPacket(data string) *SendPacket {
 	arr := strings.Split(data, SEPARATOR)
-	if len(arr) < 4 {
+	if len(arr) < 5 {
 		return nil
 	}
 	n, err := strconv.Atoi(arr[2])
@@ -69,6 +69,34 @@ func ToSendPacket(data string) *SendPacket {
 		Size:       n,
 		Username:   arr[3],
 		SenderAddr: arr[4],
+	}
+}
+
+func ToAcceptPacket(data string) *AcceptPacket {
+	arr := strings.Split(data, SEPARATOR)
+	if len(arr) < 4 {
+		return nil
+	}
+	n, err := strconv.Atoi(arr[2])
+	if err != nil {
+		return nil
+	}
+	return &AcceptPacket{
+		PacketType: arr[0],
+		Filename:   arr[1],
+		Size:       n,
+		PeerAddr:   arr[3],
+	}
+}
+
+func ToRejectPacket(data string) *RejectPacket {
+	arr := strings.Split(data, SEPARATOR)
+	if len(arr) < 2 {
+		return nil
+	}
+	return &RejectPacket{
+		PacketType: arr[0],
+		Filename:   arr[1],
 	}
 }
 
