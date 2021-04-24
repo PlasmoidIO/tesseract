@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net"
 	"share/common/packet"
-	"share/peer/application"
+	"share/peer/protocol"
 	"strings"
 )
 
@@ -84,7 +84,7 @@ func (cl *CentralClient) handleData(buf []byte) {
 		if handler != nil {
 			res := handler(p)
 			if res {
-				app := application.NewShareHandler()
+				app := protocol.NewShareHandler()
 				accepted := packet.NewAcceptPacket(p.Filename, p.Size, app.PeerHandler.GetPeerAddress())
 				cl.WritePacket(&accepted)
 				if err := app.Receive(p); err != nil {
@@ -124,7 +124,7 @@ func (cl *CentralClient) sendFileRequest(req *packet.SendPacket) (*packet.Accept
 }
 
 func (cl *CentralClient) SendFile(filename string, filesize int, target string) bool {
-	app := application.NewShareHandler()
+	app := protocol.NewShareHandler()
 	req := packet.NewSendPacket(filename, filesize, target, app.PeerHandler.GetPeerAddress())
 	accept, ok := cl.sendFileRequest(&req)
 	if ok {
