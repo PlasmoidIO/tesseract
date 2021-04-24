@@ -1,7 +1,9 @@
 package application
 
+import "fmt"
+
 func catch(err error) {
 	if err != nil {
-		panic(err)
+		fmt.Printf("Error: %s\n", err)
 	}
 }

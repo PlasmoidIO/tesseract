@@ -7,7 +7,6 @@ import (
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multiaddr"
-	"log"
 )
 
 const PROTOCOL = "share"
@@ -20,23 +19,13 @@ type PeerHandler struct {
 func NewPeerHandler() PeerHandler {
 	ctx := context.Background()
 	node, err := libp2p.New(ctx)
-	if err != nil {
-		log.Fatalf("Error: %s", err)
-	}
+	catch(err)
 	peerInfo := peer.AddrInfo{ID: node.ID(), Addrs: node.Addrs()}
 	addrs, err := peer.AddrInfoToP2pAddrs(&peerInfo)
-	if err != nil {
-		log.Fatalf("Error: %s", err)
-	}
+	catch(err)
 	return PeerHandler{
 		host:     node,
 		peerAddr: addrs[0].String(),
-	}
-}
-
-func (p *PeerHandler) Close() {
-	if err := p.host.Close(); err != nil {
-		log.Fatalf("Error: %s", err)
 	}
 }
 

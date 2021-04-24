@@ -1,9 +1,10 @@
 package application
 
 import (
+	"errors"
+	"fmt"
 	"github.com/libp2p/go-libp2p-core/network"
 	"io/ioutil"
-	"log"
 	"share/common/packet"
 )
 
@@ -16,36 +17,41 @@ func NewShareHandler() ShareHandler {
 	return ShareHandler{peerHandler}
 }
 
-func (s *ShareHandler) Send(req *packet.AcceptPacket) {
+func (s *ShareHandler) Send(req *packet.AcceptPacket) error {
 	stream := s.PeerHandler.OpenConnection(req.PeerAddr)
 	defer func() {
 		catch(stream.Close())
 	}()
 	buf, err := ioutil.ReadFile(req.Filename)
-	if err != nil {
-		log.Fatal(err)
-	}
+	catch(err)
 	if _, err = stream.Write(buf); err != nil {
-		log.Fatalf("Error writing to stream: %s", err)
+		return errors.New(fmt.Sprintf("Error writing to stream: %s", err))
 	}
+	return nil
 }
 
 // TODO: stream authentication
-func (s *ShareHandler) Receive(req *packet.SendPacket) {
-	ch := make(chan bool)
+func (s *ShareHandler) Receive(req *packet.SendPacket) error {
+	ch := make(chan string)
 	callback := func(stream network.Stream) {
 		defer func() {
 			catch(stream.Close())
 		}()
 		buf, err := ioutil.ReadAll(stream)
 		if err != nil {
-			log.Fatalf("Error reading from stream: %s", err)
+			ch <- fmt.Sprintf("Error reading from stream: %s", err)
+			return
 		}
 		if err := ioutil.WriteFile(req.Filename, buf, 0); err != nil {
-			log.Fatalf("Error writing to file: %s", err)
+			ch <- fmt.Sprintf("Error writing to file: %s", err)
+			return
 		}
-		ch <- true
+		ch <- ""
 	}
 	s.PeerHandler.HandleIncoming(callback)
-	<-ch
+	res := <-ch
+	if res != "" {
+		return errors.New(res)
+	}
+	return nil
 }

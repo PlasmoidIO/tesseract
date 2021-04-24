@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"share/common/packet"
 	"share/peer/application"
@@ -19,11 +18,15 @@ type CentralClient struct {
 	RegisteredUsername string
 }
 
+func catch(err error) {
+	if err != nil {
+		fmt.Printf("Error: %s", err)
+	}
+}
+
 func NewClient() CentralClient {
 	conn, err := net.Dial("tcp", "localhost:8080")
-	if err != nil {
-		log.Fatalf("Error: %s", err)
-	}
+	catch(err)
 	centralClient := CentralClient{
 		Conn:         conn,
 		DataChannels: []chan []byte{},
@@ -35,9 +38,7 @@ func NewClient() CentralClient {
 func (cl *CentralClient) Start() {
 	cl.Started = true
 	defer func() {
-		if err := cl.Conn.Close(); err != nil {
-			log.Fatalf("Error: %s", err)
-		}
+		catch(cl.Conn.Close())
 	}()
 
 	scanner := bufio.NewScanner(cl.Conn)
@@ -48,15 +49,14 @@ func (cl *CentralClient) Start() {
 
 func (cl *CentralClient) WritePacket(p packet.Packet) {
 	if !cl.Started {
-		log.Fatal("Error: trying to write data before connected.")
+		fmt.Println("Error: trying to write data before client connected.")
 		return
 	}
 
 	data := p.String()
 	fmt.Printf("Writing %s\n", data)
-	if _, err := fmt.Fprintln(cl.Conn, data); err != nil {
-		log.Fatalf("Error: %s", err)
-	}
+	_, err := fmt.Fprintln(cl.Conn, data)
+	catch(err)
 }
 
 func (cl *CentralClient) CreateDataChannel() chan []byte {
@@ -87,7 +87,9 @@ func (cl *CentralClient) handleData(buf []byte) {
 				app := application.NewShareHandler()
 				accepted := packet.NewAcceptPacket(p.Filename, p.Size, app.PeerHandler.GetPeerAddress())
 				cl.WritePacket(&accepted)
-				app.Receive(p)
+				if err := app.Receive(p); err != nil {
+					fmt.Println(err)
+				}
 			} else {
 				rejected := packet.NewRejectPacket(p.Filename)
 				cl.WritePacket(&rejected)
@@ -126,7 +128,7 @@ func (cl *CentralClient) SendFile(filename string, filesize int, target string) 
 	req := packet.NewSendPacket(filename, filesize, target, app.PeerHandler.GetPeerAddress())
 	accept, ok := cl.sendFileRequest(&req)
 	if ok {
-		app.Send(accept)
+		catch(app.Send(accept))
 	}
 	return ok
 }

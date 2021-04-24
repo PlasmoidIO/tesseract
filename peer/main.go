@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"os"
 	"share/common/packet"
 	"share/peer/client"
@@ -12,13 +11,14 @@ import (
 
 func catch(err error) {
 	if err != nil {
-		log.Fatal(err)
+		fmt.Printf("Error: %s\n", err)
 	}
 }
 
 func main() {
 	cl := client.NewClient()
 	go cl.Start()
+
 	scanner := bufio.NewScanner(os.Stdin)
 	cl.HandleSendRequest(func(p *packet.SendPacket) bool {
 		fmt.Println("received this bitch")
