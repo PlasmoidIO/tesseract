@@ -1,11 +1,11 @@
 package protocol
 
 import (
-	"errors"
 	"fmt"
-	"github.com/libp2p/go-libp2p-core/network"
 	"io/ioutil"
 	"share/common/packet"
+
+	"github.com/libp2p/go-libp2p-core/network"
 )
 
 type ShareHandler struct {
@@ -25,33 +25,31 @@ func (s *ShareHandler) Send(req *packet.AcceptPacket) error {
 	buf, err := ioutil.ReadFile(req.Filename)
 	catch(err)
 	if _, err = stream.Write(buf); err != nil {
-		return errors.New(fmt.Sprintf("Error writing to stream: %s", err))
+		return fmt.Errorf("error writing to stream: %s", err)
 	}
 	return nil
 }
 
 // TODO: stream authentication
 func (s *ShareHandler) Receive(req *packet.SendPacket) error {
-	ch := make(chan string)
+	ch := make(chan error)
+
 	callback := func(stream network.Stream) {
 		defer func() {
 			catch(stream.Close())
 		}()
 		buf, err := ioutil.ReadAll(stream)
 		if err != nil {
-			ch <- fmt.Sprintf("Error reading from stream: %s", err)
+			ch <- fmt.Errorf("error reading from stream: %s", err)
 			return
 		}
 		if err := ioutil.WriteFile(req.Filename, buf, 0); err != nil {
-			ch <- fmt.Sprintf("Error writing to file: %s", err)
+			ch <- fmt.Errorf("error writing to file: %s", err)
 			return
 		}
-		ch <- ""
+		ch <- nil
 	}
+
 	s.PeerHandler.HandleIncoming(callback)
-	res := <-ch
-	if res != "" {
-		return errors.New(res)
-	}
-	return nil
+	return <-ch
 }
