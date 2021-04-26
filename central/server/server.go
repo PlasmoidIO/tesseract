@@ -36,7 +36,7 @@ func (s *Server) handleRegisterPacket(conn net.Conn, p *packet.RegisterPacket) {
 	if s.authHandler.LoginUser(conn, p.Username) {
 		response = fmt.Sprintf("%s USER_REGISTER_SUCCESS", p.PacketType)
 	} else {
-		response = fmt.Sprintf("%s USER_REGISTER_FAILURE Name already taken.", p.PacketType)
+		response = fmt.Sprintf("%s %s Name already taken.", packet.ERROR, p.PacketType)
 	}
 	write(conn, response)
 }
@@ -55,11 +55,11 @@ func (s *Server) handleSendPacket(conn net.Conn, p *packet.SendPacket) {
 			delete(s.channels, ch)
 			write(conn, response)
 		} else {
-			write(conn, fmt.Sprintf("%s NOT_AUTHORIZED", p.PacketType))
+			write(conn, fmt.Sprintf("%s %s NOT_AUTHORIZED", packet.ERROR, p.PacketType))
 		}
 		return
 	}
-	write(conn, fmt.Sprintf("%s USER_NOT_FOUND", p.PacketType))
+	write(conn, fmt.Sprintf("%s %s USER_NOT_FOUND", packet.ERROR, p.PacketType))
 }
 
 func (s *Server) handleResponsePacket(conn net.Conn, data string) {

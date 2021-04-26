@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"share/common/packet"
 	"share/peer/protocol"
 	"strings"
@@ -75,10 +76,27 @@ func (cl *CentralClient) RemoveDataChannel(c chan []byte) {
 	}
 }
 
+func (cl *CentralClient) HandleError(errorType string, callback func(err string)) {
+	ch := cl.CreateDataChannel()
+	for {
+		res := string(<-ch)
+		packetType := packet.GetPacketType(res)
+		if packetType == packet.ERROR {
+			p := packet.ToErrorPacket(res)
+			if p.ErrorType == errorType {
+				callback(p.ErrorMessage)
+				cl.RemoveDataChannel(ch)
+				break
+			}
+		}
+	}
+}
+
 func (cl *CentralClient) handleData(buf []byte) {
 	data := string(buf)
+	fmt.Printf("I hath received: %s\n", data)
 	packetType := packet.GetPacketType(data)
-	if packetType == "FILE_SEND_REQUEST" {
+	if packetType == packet.SEND {
 		p := packet.ToSendPacket(data)
 		handler := cl.sendRequestHandler
 		if handler != nil {
@@ -102,37 +120,60 @@ func (cl *CentralClient) handleData(buf []byte) {
 	}
 }
 
-func (cl *CentralClient) sendFileRequest(req *packet.SendPacket) (*packet.AcceptPacket, bool) {
+func (cl *CentralClient) sendFileRequest(req *packet.SendPacket) (*packet.AcceptPacket, error) {
 	cl.WritePacket(req)
 	ch := cl.CreateDataChannel()
 	for {
 		res := string(<-ch)
 		packetType := packet.GetPacketType(res)
-		if packetType == packet.ACCEPT {
+		switch packetType {
+		case packet.ACCEPT:
 			acceptPacket := packet.ToAcceptPacket(res)
 			if acceptPacket.Filename == req.Filename && acceptPacket.Size == req.Size {
 				cl.RemoveDataChannel(ch)
-				return acceptPacket, true
+				return acceptPacket, nil
 			}
-		}
-		if packetType == packet.REJECT {
+		case packet.REJECT:
 			rejectPacket := packet.ToRejectPacket(res)
 			if rejectPacket.Filename == req.Filename {
 				cl.RemoveDataChannel(ch)
-				return nil, false
+				return nil, nil
+			}
+		case packet.ERROR:
+			errorPacket := packet.ToErrorPacket(res)
+			if errorPacket.ErrorType == packet.SEND {
+				cl.RemoveDataChannel(ch)
+				return nil, errors.New(errorPacket.ErrorMessage)
 			}
 		}
 	}
 }
 
-func (cl *CentralClient) SendFile(filename string, filesize int, target string) bool {
-	app := protocol.NewShareHandler()
-	req := packet.NewSendPacket(filename, filesize, target, app.PeerHandler.GetPeerAddress())
-	accept, ok := cl.sendFileRequest(&req)
-	if ok {
-		catch(app.Send(accept))
+// @returns (bytes sent, error)
+func (cl *CentralClient) SendFile(filepath string, target string) (int, error) {
+	file, err := os.Open(filepath)
+	if err != nil {
+		return -1, err
 	}
-	return ok
+	info, err := file.Stat()
+	if err != nil {
+		return -1, err
+	}
+	filesize := int(info.Size())
+
+	app := protocol.NewShareHandler()
+	req := packet.NewSendPacket(filepath, filesize, target, app.PeerHandler.GetPeerAddress())
+	accept, err := cl.sendFileRequest(&req)
+	if err != nil {
+		return -1, err
+	}
+	if accept != nil {
+		if err := app.Send(accept); err != nil {
+			return filesize, err
+		}
+	}
+
+	return filesize, nil
 }
 
 func (cl *CentralClient) RegisterUsername(username string) error {

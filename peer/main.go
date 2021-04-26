@@ -34,8 +34,16 @@ func main() {
 			continue
 		}
 		filename := arr[0]
-		filesize := 815
 		target := arr[1]
-		fmt.Println("post result", cl.SendFile(filename, filesize, target))
+
+		filesize, err := cl.SendFile(filename, target)
+		if err != nil {
+			fmt.Printf("Error sending file: %s\n", err)
+		}
+		if filesize >= 0 {
+			fmt.Printf("File %s of size %d sent to %s successfully!\n", filename, filesize, target)
+		} else {
+			fmt.Printf("File %s sending to %s failed!\n", filename, target)
+		}
 	}
 }

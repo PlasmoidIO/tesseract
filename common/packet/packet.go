@@ -11,6 +11,7 @@ const (
 	ACCEPT    = "SEND_REQUEST_ACCEPTED"
 	REJECT    = "SEND_REQUEST_REJECTED"
 	REGISTER  = "REGISTER_USERNAME"
+	ERROR     = "ERROR"
 	SEPARATOR = " "
 )
 
@@ -41,6 +42,24 @@ type RejectPacket struct {
 type RegisterPacket struct {
 	PacketType string
 	Username   string
+}
+
+type ErrorPacket struct {
+	PacketType   string
+	ErrorType    string
+	ErrorMessage string
+}
+
+func ToErrorPacket(data string) *ErrorPacket {
+	arr := strings.Split(data, SEPARATOR)
+	if len(arr) < 3 {
+		return nil
+	}
+	return &ErrorPacket{
+		PacketType:   arr[0],
+		ErrorType:    arr[1],
+		ErrorMessage: strings.Join(arr[2:], " "),
+	}
 }
 
 func ToRegisterPacket(data string) *RegisterPacket {
@@ -124,6 +143,10 @@ func (p *RejectPacket) String() string {
 	return fmt.Sprintf("%s%s%s", p.PacketType, SEPARATOR, p.Filename)
 }
 
+func (p *ErrorPacket) String() string {
+	return fmt.Sprintf("%s%s%s%s%s", p.PacketType, SEPARATOR, p.ErrorType, SEPARATOR, p.ErrorMessage)
+}
+
 func NewRegisterPacket(username string) RegisterPacket {
 	return RegisterPacket{
 		PacketType: REGISTER,
@@ -154,5 +177,13 @@ func NewRejectPacket(filename string) RejectPacket {
 	return RejectPacket{
 		PacketType: REJECT,
 		Filename:   filename,
+	}
+}
+
+func NewErrorPacket(errorType string, errorMessage string) ErrorPacket {
+	return ErrorPacket{
+		PacketType:   ERROR,
+		ErrorType:    errorType,
+		ErrorMessage: errorMessage,
 	}
 }
