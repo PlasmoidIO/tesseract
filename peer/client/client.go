@@ -2,7 +2,6 @@ package client
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -12,26 +11,23 @@ import (
 )
 
 type CentralClient struct {
-	Conn               net.Conn
-	DataChannels       []chan []byte
-	sendRequestHandler func(p *packet.SendPacket) bool
+	Conn net.Conn
+	// @returns if this handler has reached its end-case (removes from arr if true)
+	dataHandlers       []func([]byte) bool
+	sendRequestHandler func(*packet.SendPacket) bool
 	Started            bool
 	RegisteredUsername string
-}
-
-func catch(err error) {
-	if err != nil {
-		fmt.Printf("Error: %s", err)
-	}
 }
 
 func NewClient() CentralClient {
 	conn, err := net.Dial("tcp", "localhost:8080")
 	catch(err)
 	centralClient := CentralClient{
-		Conn:         conn,
-		DataChannels: []chan []byte{},
-		Started:      false,
+		Conn:               conn,
+		dataHandlers:       []func([]byte) bool{},
+		sendRequestHandler: nil,
+		Started:            false,
+		RegisteredUsername: "",
 	}
 	return centralClient
 }
@@ -54,42 +50,36 @@ func (cl *CentralClient) WritePacket(p packet.Packet) {
 		return
 	}
 
-	data := p.String()
-	fmt.Printf("Writing %s\n", data)
-	_, err := fmt.Fprintln(cl.Conn, data)
+	_, err := fmt.Fprintln(cl.Conn, p.String())
 	catch(err)
 }
 
-func (cl *CentralClient) CreateDataChannel() chan []byte {
-	ch := make(chan []byte)
-	cl.DataChannels = append(cl.DataChannels, ch)
-	return ch
+func (cl *CentralClient) HandleData(callback func([]byte) bool) {
+	cl.dataHandlers = append(cl.dataHandlers, callback)
 }
 
-func (cl *CentralClient) RemoveDataChannel(c chan []byte) {
-	for i, ch := range cl.DataChannels {
-		if ch == c {
-			last := len(cl.DataChannels) - 1
-			cl.DataChannels[i], cl.DataChannels[last] = cl.DataChannels[last], cl.DataChannels[i]
-			cl.DataChannels = cl.DataChannels[:last]
-		}
+func (cl *CentralClient) RemoveDataHandler(index int) {
+	last := len(cl.dataHandlers) - 1
+	if last < 0 {
+		return
 	}
+	cl.dataHandlers[last], cl.dataHandlers[index] = cl.dataHandlers[index], cl.dataHandlers[last]
 }
 
 func (cl *CentralClient) HandleError(errorType string, callback func(err string)) {
-	ch := cl.CreateDataChannel()
-	for {
-		res := string(<-ch)
-		packetType := packet.GetPacketType(res)
+	handler := func(buf []byte) bool {
+		data := string(buf)
+		packetType := packet.GetPacketType(data)
 		if packetType == packet.ERROR {
-			p := packet.ToErrorPacket(res)
+			p := packet.ToErrorPacket(data)
 			if p.ErrorType == errorType {
 				callback(p.ErrorMessage)
-				cl.RemoveDataChannel(ch)
-				break
+				return true
 			}
 		}
+		return false
 	}
+	cl.HandleData(handler)
 }
 
 func (cl *CentralClient) handleData(buf []byte) {
@@ -115,39 +105,57 @@ func (cl *CentralClient) handleData(buf []byte) {
 		}
 	}
 
-	for _, c := range cl.DataChannels {
-		c <- buf
+	for index, callback := range cl.dataHandlers {
+		remove := callback(buf)
+		if remove {
+			cl.RemoveDataHandler(index)
+		}
 	}
 }
 
 func (cl *CentralClient) sendFileRequest(req *packet.SendPacket) (*packet.AcceptPacket, error) {
 	cl.WritePacket(req)
-	ch := cl.CreateDataChannel()
-	for {
-		res := string(<-ch)
-		packetType := packet.GetPacketType(res)
+
+	type Result struct {
+		Packet *packet.AcceptPacket
+		Error  error
+	}
+	ch := make(chan Result)
+
+	callback := func(buf []byte) bool {
+		data := string(buf)
+		packetType := packet.GetPacketType(data)
 		switch packetType {
 		case packet.ACCEPT:
-			acceptPacket := packet.ToAcceptPacket(res)
+			acceptPacket := packet.ToAcceptPacket(data)
 			if acceptPacket.Filename == req.Filename && acceptPacket.Size == req.Size {
-				cl.RemoveDataChannel(ch)
-				return acceptPacket, nil
+				ch <- Result{
+					Packet: acceptPacket,
+					Error:  nil,
+				}
+				return true
 			}
 		case packet.REJECT:
-			rejectPacket := packet.ToRejectPacket(res)
+			rejectPacket := packet.ToRejectPacket(data)
 			if rejectPacket.Filename == req.Filename {
-				cl.RemoveDataChannel(ch)
-				return nil, nil
+				ch <- Result{nil, nil}
+				return true
 			}
 		case packet.ERROR:
-			errorPacket := packet.ToErrorPacket(res)
+			errorPacket := packet.ToErrorPacket(data)
 			if errorPacket.ErrorType == packet.SEND {
-				cl.RemoveDataChannel(ch)
-				return nil, errors.New(errorPacket.ErrorMessage)
+				ch <- Result{Packet: nil, Error: fmt.Errorf(errorPacket.ErrorMessage)}
+				return true
 			}
 		}
+		return false
 	}
+	cl.HandleData(callback)
+	result := <-ch
+	return result.Packet, result.Error
 }
+
+// TODO: continue from here
 
 // @returns (bytes sent, error)
 func (cl *CentralClient) SendFile(filepath string, target string) (int, error) {
@@ -178,30 +186,33 @@ func (cl *CentralClient) SendFile(filepath string, target string) (int, error) {
 
 func (cl *CentralClient) RegisterUsername(username string) error {
 	registerPacket := packet.NewRegisterPacket(username)
-	c := cl.CreateDataChannel()
 	cl.WritePacket(&registerPacket)
-	for {
-		res := <-c
-		data := strings.Split(string(res), " ")
+
+	ch := make(chan error)
+	callback := func(buf []byte) bool {
+		data := strings.Split(string(buf), " ")
 		if len(data) < 2 {
-			continue
+			return false
 		}
 		if data[0] == registerPacket.PacketType {
-			cl.RemoveDataChannel(c)
 			switch data[1] {
 			case "USER_REGISTER_SUCCESS":
 				cl.RegisteredUsername = username
-				return nil
+				ch <- nil
 			case "USER_REGISTER_FAILURE":
 				if len(data) > 2 {
 					errorMessage := strings.Join(data[2:], " ")
-					return errors.New(errorMessage)
+					ch <- fmt.Errorf(errorMessage)
+				} else {
+					ch <- fmt.Errorf("error registering user")
 				}
 			}
-			break
+			return true
 		}
+		return false
 	}
-	return errors.New("error registering user")
+	cl.HandleData(callback)
+	return <-ch
 }
 
 // ch: send request accepted or denied
