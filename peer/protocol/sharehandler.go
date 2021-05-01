@@ -43,10 +43,13 @@ func (s *ShareHandler) Receive(req *packet.SendPacket) error {
 			ch <- fmt.Errorf("error reading from stream: %s", err)
 			return
 		}
-		if err := ioutil.WriteFile(req.Filename, buf, 0); err != nil {
+		if err := ioutil.WriteFile(req.Filename, buf, 0777); err != nil {
 			ch <- fmt.Errorf("error writing to file: %s", err)
 			return
 		}
+
+		// TODO: add handleReceiveSuccess callbacks
+		fmt.Printf("File %s from %s of size %d received successfully.\n", req.Filename, req.Username, req.Size)
 		ch <- nil
 	}
 

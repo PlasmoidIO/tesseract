@@ -9,10 +9,20 @@ import (
 	"strings"
 )
 
+var dataChannel chan bool
+
 func catch(err error) {
 	if err != nil {
 		fmt.Printf("Error: %s\n", err)
 	}
+}
+
+func handleSendRequest(p *packet.SendPacket) bool {
+	fmt.Printf("File named %s received from %s with size of %d. Accept? [y/n]\n", p.Filename, p.Username, p.Size)
+	dataChannel = make(chan bool)
+	res := <-dataChannel
+	dataChannel = nil
+	return res
 }
 
 func main() {
@@ -20,10 +30,7 @@ func main() {
 	go cl.Start()
 
 	scanner := bufio.NewScanner(os.Stdin)
-	cl.HandleSendRequest(func(p *packet.SendPacket) bool {
-		fmt.Println("received this bitch")
-		return true
-	})
+	cl.HandleSendRequest(handleSendRequest)
 	fmt.Print("Username: ")
 	if scanner.Scan() {
 		catch(cl.RegisterUsername(scanner.Text()))
@@ -31,6 +38,14 @@ func main() {
 	for scanner.Scan() {
 		arr := strings.Split(scanner.Text(), " ")
 		if len(arr) < 2 {
+			if len(arr) > 0 {
+				switch strings.ToLower(arr[0]) {
+				case "y":
+					dataChannel <- true
+				case "n":
+					dataChannel <- false
+				}
+			}
 			continue
 		}
 		filename := arr[0]
